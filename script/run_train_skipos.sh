@@ -1,15 +1,15 @@
 factor=$1
 rope_type=$2
 
-prefix=path_to_your_model_and_data
+prefix=/mnt/llmdata
 
 debug_mode="-m debugpy --listen 127.0.0.1:6679 --wait-for-client"
 # python -m torch.distributed.run --nproc_per_node=1 ${debug_mode} src/train_pose.py \
 deepspeed src/train_pose.py \
-    --model_name_or_path $prefix/model/llama-7b \
-    --train_data_path $prefix/data/pile/train/00_long_10w.jsonl \
-    --valid_data_path $prefix/data/pile/val_long.jsonl \
-    --test_data_path $prefix/data/pile/test_pg19.jsonl \
+    --model_name_or_path $prefix/Llama-2-7b-hf \
+    --train_data_path $prefix/pose/pile/train/00_long_10w.jsonl \
+    --valid_data_path $prefix/pose/pile/val_long.jsonl \
+    --test_data_path $prefix/pose/pile/test_pg19.jsonl \
     --output_dir $prefix/pose/results/2k-$((factor*2))k-${rope_type} \
     --max_steps 1000 \
     --model_max_position_embeddings 2048 \
