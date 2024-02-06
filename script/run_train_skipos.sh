@@ -32,5 +32,6 @@ deepspeed src/train_pose.py \
     --logging_steps 5 \
     --report_to "tensorboard" \
     --gradient_checkpointing True \
-    --fp16 True \
+    --fp16 False \
+    --bf16 True \
     --deepspeed src/configs/deepspeed_config.json \
