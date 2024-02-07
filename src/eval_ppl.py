@@ -214,8 +214,10 @@ def main():
         
         ppl_list.append(ppl)
 
-    root_dir = Path(__file__).parent.parent
-    path_to_output_fn = (root_dir / args.path_to_output_dir / f"{args.model_name}+{args.dataset_name}").as_posix()
+
+    import os
+    os.makedirs(args.path_to_output_dir, exist_ok=True)
+    path_to_output_fn = (Path(args.path_to_output_dir) / f"{args.model_name}+{args.dataset_name}").as_posix()
     with open(path_to_output_fn, "w") as f:
         f.write(f"model: {args.model_name}\n")
         f.write(f"length: {', '.join(map(str, context_window_size))}\n")

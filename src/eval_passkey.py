@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 from my_modeling_llama import LlamaForCausalLM
 from my_configuration_llama import LlamaConfig
-from train_skipos import smart_tokenizer_and_embedding_resize, DEFAULT_BOS_TOKEN, DEFAULT_EOS_TOKEN, DEFAULT_PAD_TOKEN, DEFAULT_UNK_TOKEN
+from train_pose import smart_tokenizer_and_embedding_resize, DEFAULT_BOS_TOKEN, DEFAULT_EOS_TOKEN, DEFAULT_PAD_TOKEN, DEFAULT_UNK_TOKEN
 
 gpu_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -142,8 +142,9 @@ def main():
         result_dict["correct_rate"] = correct_cnt/iter_nums
         result_list.append(result_dict)
     
-    root_dir = Path(__file__).parent.parent
-    path_to_output_fn = (root_dir / args.path_to_output_dir / f"{args.model_name}.jsonl").as_posix()
+    import os
+    os.makedirs(args.path_to_output_dir, exist_ok=True)
+    path_to_output_fn = (Path(args.path_to_output_dir) / f"{args.model_name}.jsonl").as_posix()
 
     with jsonlines.open(path_to_output_fn, "w") as writer:
         writer.write_all(result_list)
