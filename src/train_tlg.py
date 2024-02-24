@@ -237,7 +237,7 @@ def train():
 
     if tokenizer.pad_token is None:
         smart_tokenizer_and_embedding_resize(
-            special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
+            special_tokens_dict=dict(pad_token='<|endoftext|>'), # <|endoftext|> 100257
             tokenizer=tokenizer,
             model=model,
         )

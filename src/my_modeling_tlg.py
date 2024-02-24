@@ -14,7 +14,7 @@ from transformers.utils import logging
 from transformers.cache_utils import Cache, DynamicCache
 
 from triton_flash_blocksparse_attn import get_local_strided_sparse_attention_op, BlockSparseParams
-#from .positional_embedding import RotaryEmbedding
+from positional_embedding import RotaryEmbedding, RevisedYaRNRotaryEmbedding
 
 from my_configuration_tlg import TLGv4Config
 
@@ -60,215 +60,6 @@ class TLGv4MLP(nn.Module):
                 gegelu(self.up_proj(x), limit=self.gegelu_limit)
             )
         )
-    
-
-class RotaryEmbedding(torch.nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=max_position_embeddings, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        # t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
-        t = np.arange(self.max_seq_len_cached, dtype=np.float64)
-        t = torch.tensor(t, device=self.inv_freq.device, dtype=torch.float64)
-
-        # freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-        freqs = torch.outer(t, self.inv_freq.to(device=t.device).to(t.dtype))
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos()[None, None, :, :].to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin()[None, None, :, :].to(dtype), persistent=False)
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len=seq_len, device=x.device, dtype=x.dtype)
-
-        return (
-            self.cos_cached[:, :, :, ...].to(dtype=x.dtype),
-            self.sin_cached[:, :, :, ...].to(dtype=x.dtype),
-        )
-
-
-class LinearScalingRotaryEmbedding(RotaryEmbedding):
-    """LlamaRotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
-
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
-        self.scaling_factor = scaling_factor
-        super().__init__(dim, max_position_embeddings, base, device)
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-
-        t = np.arange(self.max_seq_len_cached, dtype=np.float64)
-        t = t / self.scaling_factor
-        t = torch.tensor(t, device=self.inv_freq.device, dtype=torch.float64)
-
-        freqs = torch.outer(t, self.inv_freq.to(device=t.device).to(t.dtype))
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos()[None, None, :, :].to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin()[None, None, :, :].to(dtype), persistent=False)
-
-class VanillaNTKScalingRotaryEmbedding(RotaryEmbedding):
-
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
-        self.scaling_factor = scaling_factor
-        super().__init__(dim, max_position_embeddings, base, device)
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-
-        base = self.base * self.scaling_factor ** (self.dim / (self.dim - 2))
-        inv_freq = 1.0 / (base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-
-        t = np.arange(self.max_seq_len_cached, dtype=np.float64)
-        t = torch.tensor(t, device=self.inv_freq.device, dtype=torch.float64)
-
-        # freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-        freqs = torch.outer(t, self.inv_freq.to(device=t.device).to(t.dtype))
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos()[None, None, :, :].to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin()[None, None, :, :].to(dtype), persistent=False)
-
-class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
-    """LlamaRotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
-
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
-        self.scaling_factor = scaling_factor
-        super().__init__(dim, max_position_embeddings, base, device)
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-
-        if seq_len > self.max_position_embeddings:
-            base = self.base * (
-                (self.scaling_factor * seq_len / self.max_position_embeddings) - (self.scaling_factor - 1)
-            ) ** (self.dim / (self.dim - 2))
-            inv_freq = 1.0 / (base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
-            self.register_buffer("inv_freq", inv_freq, persistent=False)
-
-        t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
-
-        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos()[None, None, :, :].to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin()[None, None, :, :].to(dtype), persistent=False)
-
-
-# Inverse dim formula to find dim based on number of rotations
-def _yarn_find_correction_dim(num_rotations, dim, base=10000, max_position_embeddings=2048):
-    return (dim * math.log(max_position_embeddings/(num_rotations * 2 * math.pi)))/(2 * math.log(base))
-
-# Find dim range bounds based on rotations
-def _yarn_find_correction_range(low_rot, high_rot, dim, base=10000, max_position_embeddings=2048):
-    low = math.floor(_yarn_find_correction_dim(
-        low_rot, dim, base, max_position_embeddings))
-    high = math.ceil(_yarn_find_correction_dim(
-        high_rot, dim, base, max_position_embeddings))
-    return max(low, 0), min(high, dim-1)  # Clamp values just in case
-
-def _yarn_linear_ramp_mask(min, max, dim):
-    if min == max:
-        max += 0.001  # Prevent singularity
-
-    linear_func = (torch.arange(dim, dtype=torch.float32) - min) / (max - min)
-    ramp_func = torch.clamp(linear_func, 0, 1)
-    return ramp_func
-
-def _yarn_get_mscale(scale=1):
-    if scale <= 1:
-        return 1.0
-    return 0.1 * math.log(scale) + 1.0
-
-
-class YaRNScaledRotaryEmbedding(torch.nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, scale=1, original_max_position_embeddings=2048, extrapolation_factor=1, attn_factor=1, beta_fast=32, beta_slow=1, finetuned=False, device=None):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        self.scale = scale
-        self.original_max_position_embeddings = original_max_position_embeddings
-        self.extrapolation_factor = extrapolation_factor
-        self.attn_factor = attn_factor
-        self.beta_fast = beta_fast
-        self.beta_slow = beta_slow
-
-        # self.yarn(device)
-        self.revised_yarn(device)
-
-        # Build here to make `torch.jit.trace` work.
-        self.max_seq_len_cached = max_position_embeddings
-
-        t = np.arange(self.max_seq_len_cached, dtype=np.float64)
-        t = torch.tensor(t, device=self.inv_freq.device, dtype=torch.float64)
-        freqs = torch.outer(t, self.inv_freq.to(device=t.device).to(t.dtype))
-        # t = torch.arange(self.max_seq_len_cached, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
-        # freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        dtype = torch.get_default_dtype()
-
-        self.register_buffer("cos_cached", (emb.cos() * self.mscale)[None, None, :, :].to(dtype), persistent=False)
-        self.register_buffer("sin_cached", (emb.sin() * self.mscale)[None, None, :, :].to(dtype), persistent=False)
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        # This `if` block is unlikely to be run after we build sin/cos in `__init__`. Keep the logic here just in case.
-        if seq_len > self.max_seq_len_cached:
-            print("*****notice******")
-            self.max_seq_len_cached = seq_len
-
-            t = torch.arange(self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype)
-            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            # Different from paper, but it uses a different permutation in order to obtain the same calculation
-            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
-
-            self.register_buffer("cos_cached", (emb.cos() * self.mscale)[None, None, :, :].to(x.dtype), persistent=False)
-            self.register_buffer("sin_cached", (emb.sin() * self.mscale)[None, None, :, :].to(x.dtype), persistent=False)
-        return (
-            self.cos_cached[:, :, :, ...].to(dtype=x.dtype),
-            self.sin_cached[:, :, :, ...].to(dtype=x.dtype),
-        )
-
-    def yarn(self, device):
-        pos_freqs = self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim)
-        inv_freq_extrapolation = 1.0 / pos_freqs
-        inv_freq_interpolation = 1.0 / (self.scale * pos_freqs)
-
-        low, high = _yarn_find_correction_range(self.beta_fast, self.beta_slow, self.dim, self.base, self.original_max_position_embeddings)
-        inv_freq_mask = (1 - _yarn_linear_ramp_mask(low, high, self.dim // 2).float().to(device)) * self.extrapolation_factor # Get n-d rotational scaling corrected for extrapolation
-        inv_freq = inv_freq_interpolation * (1 - inv_freq_mask) + inv_freq_extrapolation * inv_freq_mask
-
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.mscale = float(_yarn_get_mscale(self.scale) * self.attn_factor) # Get n-d magnitude scaling corrected for interpolation
-
-    def revised_yarn(self, device):
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
-
-        low, high = _yarn_find_correction_range(self.beta_fast, self.beta_slow, self.dim, self.base, self.original_max_position_embeddings)
-        inv_freq_mask = (1 - _yarn_linear_ramp_mask(low, high, self.dim // 2).float().to(device)) * self.extrapolation_factor
-
-        inv_freq = inv_freq / ((1-inv_freq_mask)*self.scale + inv_freq_mask)
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.mscale = float(_yarn_get_mscale(self.scale) * self.attn_factor)
 
 
 class TLGv4SelfAttention(nn.Module):
@@ -326,20 +117,23 @@ class TLGv4SelfAttention(nn.Module):
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]
             if scaling_type == "linear":
+                raise ValueError("Linear scaling is not supported for the TLG models")
                 self.rotary_emb = LinearScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.rope_embedding_base, scaling_factor=scaling_factor
                 )
             elif scaling_type == "dynamic":
+                raise ValueError("dynamic scaling is not supported for the TLG models")
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.rope_embedding_base, scaling_factor=scaling_factor
                 )
             elif scaling_type == "vanilla_ntk":
+                raise ValueError("vanilla_ntk scaling is not supported for the TLG models")
                 self.rotary_emb = VanillaNTKScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.rope_embedding_base, scaling_factor=scaling_factor
                 )
             elif scaling_type == "yarn":
                 original_max_position_embeddings = self.config.rope_scaling["original_max_position_embeddings"]
-                self.rotary_emb = YaRNScaledRotaryEmbedding(
+                self.rotary_emb = RevisedYaRNRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.rope_embedding_base, scale=scaling_factor, original_max_position_embeddings=original_max_position_embeddings
                 )
             else:
