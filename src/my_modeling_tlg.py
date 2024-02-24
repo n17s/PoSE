@@ -13,10 +13,10 @@ from transformers.utils import logging
 
 from transformers.cache_utils import Cache, DynamicCache
 
-from .triton_flash_blocksparse_attn import get_local_strided_sparse_attention_op, BlockSparseParams
+from triton_flash_blocksparse_attn import get_local_strided_sparse_attention_op, BlockSparseParams
 #from .positional_embedding import RotaryEmbedding
 
-from .my_configuration_tlg import TLGv4Config
+from my_configuration_tlg import TLGv4Config
 
 logger = logging.get_logger(__name__)
 

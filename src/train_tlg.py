@@ -211,7 +211,7 @@ def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir)
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, trust_remote_code=True)
     scaled_max_position_embeddings=int(training_args.model_max_position_embeddings * training_args.rope_scaling_factor)
     config.max_position_embeddings=scaled_max_position_embeddings
 
@@ -224,6 +224,7 @@ def train():
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         config=config,
+        trust_remote_code=True
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -231,8 +232,9 @@ def train():
         cache_dir=training_args.cache_dir,
         padding_side="right",
         use_fast=True,
+        trust_remote_code=True
     )
-    
+
     if tokenizer.pad_token is None:
         smart_tokenizer_and_embedding_resize(
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
