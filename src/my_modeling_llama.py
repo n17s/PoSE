@@ -301,7 +301,7 @@ class LlamaYaRNScaledRotaryEmbedding(torch.nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.mscale = float(_yarn_get_mscale(self.scale) * self.attn_factor)
 
-        
+
 
 
 def rotate_half(x):
@@ -402,7 +402,7 @@ class LlamaAttention(nn.Module):
                 self.rotary_emb = LlamaLinearScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
                 )
-            elif scaling_type == "dynamic":
+            elif scaling_type == "dynmamic":
                 self.rotary_emb = LlamaDynamicNTKScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
                 )

@@ -28,6 +28,10 @@ from transformers import Trainer, GPT2ForQuestionAnswering, AutoConfig, AutoToke
 from datasets import load_dataset
 
 from my_modeling_tlg import TLGv4ForCausalLM
+
+# Slow but useful for debugging
+torch.autograd.set_detect_anomaly(True)
+
 #import utils
 
 IGNORE_INDEX = -100
@@ -95,18 +99,19 @@ def smart_tokenizer_and_embedding_resize(
 
     Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
     """
+    old_num_tokens = len(tokenizer)
     num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
-    model.resize_token_embeddings(len(tokenizer))
+    model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=64)
 
     if num_new_tokens > 0:
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        input_embeddings_avg = input_embeddings[:old_num_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:old_num_tokens].mean(dim=0, keepdim=True)
 
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+        input_embeddings[old_num_tokens:old_num_tokens+num_new_tokens] = input_embeddings_avg
+        output_embeddings[old_num_tokens:old_num_tokens+num_new_tokens] = output_embeddings_avg
 
 
 
@@ -331,4 +336,6 @@ def train():
 
 
 if __name__ == "__main__":
+    transformers.logging.set_verbosity(transformers.logging.DEBUG)
+    deepspeed.init_distributed()
     train()

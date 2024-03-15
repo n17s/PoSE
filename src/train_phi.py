@@ -27,8 +27,9 @@ from torch.utils.data import Dataset
 from transformers import Trainer, GPT2ForQuestionAnswering, AutoConfig
 from datasets import load_dataset
 
-from my_modeling_llama import LlamaForCausalLM
-#import utils
+from my_configuration_phi import PhiYarnConfig
+from my_modeling_phi import PhiYarnForCausalLM
+from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -211,7 +212,11 @@ def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir)
+    print("cache dir:", training_args.cache_dir)
+    checkpoint = model_args.model_name_or_path
+
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, attn_implementation="flash_attention_2") # flash_attention_2
+    #config = AutoConfig.from_pretrained(model_args.model_name_or_path, cache_dir=checkpoint) #cache_dir=training_args.cache_dir)
     scaled_max_position_embeddings=int(training_args.model_max_position_embeddings * training_args.rope_scaling_factor)
     config.max_position_embeddings=scaled_max_position_embeddings
 
@@ -223,27 +228,45 @@ def train():
     else:
         print(f"Rope scaling type: None")
         
+    model = PhiYarnForCausalLM.from_pretrained(checkpoint, cache_dir=checkpoint, config=config, use_flash_attention_2=True)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(checkpoint,  padding_side="right",)
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if model.config.pad_token_id is None and model.config.eos_token_id is not None:
+        model.config.pad_token_id = model.config.eos_token_id
+    if model.generation_config.pad_token_id is None and model.generation_config.eos_token_id is not None:
+        model.generation_config.pad_token_id = model.generation_config.eos_token_id
+
+
+    AutoConfig.register("phiyarn", PhiYarnConfig)
+    AutoModel.register(PhiYarnConfig, PhiYarnForCausalLM)
+    AutoModelForCausalLM.register(PhiYarnConfig, PhiYarnForCausalLM)
+
+    PhiYarnConfig.register_for_auto_class()
+    PhiYarnForCausalLM.register_for_auto_class("AutoModelForCausalLM")
+
+    """
     model = LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         config=config,
     )
 
-    tokenizer = transformers.LlamaTokenizer.from_pretrained(
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+    #tokenizer = transformers.LlamaTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         padding_side="right",
-        use_fast=True,
+        use_fast=False, # use_fast=True is not supported
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        """
+
         smart_tokenizer_and_embedding_resize(
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
             tokenizer=tokenizer,
             model=model,
         )
-        """
     if "llama" in model_args.model_name_or_path:
         print("Adding special tokens.")
         tokenizer.add_special_tokens(
@@ -255,6 +278,7 @@ def train():
         )
     else:
         print("No special tokens added.")
+    """
 
     raw_train_datasets = load_dataset('json', data_files=data_args.train_data_path, split="train", cache_dir=training_args.cache_dir)
     raw_valid_datasets = load_dataset('json', data_files=data_args.valid_data_path, split="train", cache_dir=training_args.cache_dir)

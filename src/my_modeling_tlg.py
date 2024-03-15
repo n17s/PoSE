@@ -14,7 +14,7 @@ from transformers.utils import logging
 from transformers.cache_utils import Cache, DynamicCache
 
 from triton_flash_blocksparse_attn import get_local_strided_sparse_attention_op, BlockSparseParams
-from positional_embedding import RotaryEmbedding, RevisedYaRNRotaryEmbedding
+from tlg_positional_embedding import RotaryEmbedding, RevisedYaRNRotaryEmbedding
 
 from my_configuration_tlg import TLGv4Config
 
@@ -111,8 +111,8 @@ class TLGv4SelfAttention(nn.Module):
         self._init_rope()
 
     def _init_rope(self):
-        if self.config.rope_scaling is None:
-            self.rotary_emb = RotaryEmbedding(self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.rope_embedding_base)
+        if not hasattr(self.config,'rope_scaling') or self.config.rope_scaling is None:
+            self.rotary_emb = RotaryEmbedding(self.head_dim, max_seq_len=self.max_position_embeddings, base=self.rope_embedding_base, position_scale=self.rope_position_scale)
         else:
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]

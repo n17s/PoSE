@@ -4,6 +4,7 @@
 description: Experiment "nikos pose phi25v3"
 
 # amlt run phi25v3.yaml :phi25v3pose
+# successful run but with messed up autoclasses https://aka.ms/amlt?q=ioo32
 
 target:
   name: aims-sing-east-us2
@@ -13,6 +14,11 @@ target:
 #target:
 #  name: GenAI-Shared-WestEuro
 #  workspace_name: Singularity-GenAI-WS
+#  service: sing
+
+#target:
+#  name: aims-sing-a100-wus3 # aims-sing-res-wus3-02
+#  workspace_name: aims-sing-res-eu-WS
 #  service: sing
 
 
@@ -47,11 +53,11 @@ code:
 
 jobs:
   - name: debugsession #_westeuro
-    sku: 1xG8
+    sku: 40000000000G8
     process_count_per_node: 1
     sla_tier: Premium # Standard
     command:
-      - sleep 2d
+      - sleep infinity
 
   - name: tlgpose4node
     sku: 4xG8-H100-IB
