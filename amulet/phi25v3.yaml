@@ -1,0 +1,114 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+description: Experiment "nikos pose phi25v3"
+
+# amlt run phi25v3.yaml :phi25v3pose
+# successful run but with messed up autoclasses https://aka.ms/amlt?q=ioo32
+
+target:
+  name: aims-sing-east-us2
+  workspace_name: aims-sing-res-eu-WS
+  service: sing
+
+#target:
+#  name: GenAI-Shared-WestEuro
+#  workspace_name: Singularity-GenAI-WS
+#  service: sing
+
+#target:
+#  name: aims-sing-a100-wus3 # aims-sing-res-wus3-02
+#  workspace_name: aims-sing-res-eu-WS
+#  service: sing
+
+
+environment:
+  image: nvidia24.01-ds0.13.3-fa2.5.3-te1.4.0.beta-mb0.5.1-gg:20240222 # amlt-sing/acpt-2.0.0-cuda11.8 
+  username: structureddl
+  registry: structureddl.azurecr.io
+  setup:
+    - set -e -o xtrace
+    - export PATH=/home/aiscuser/.local/bin:/home/$$USER/.local/bin:$$PATH
+    - pip list
+    - pip install datasets fire transformers accelerate sentencepiece tensorboard jsonlines numpy openai tqdm tiktoken pytest azureml-sdk mlflow azureml-mlflow einops
+    - pip install --no-deps xformers
+    - pip list
+    - sudo apt update && sudo apt install -y tmux strace
+    
+
+storage:
+  data_storage:
+    storage_account_name: aimsllmeus2 #aimssingreseuw7843007229
+    container_name: data
+    mount_dir: /mnt/llmdata
+    is_output: true
+
+  output:
+    storage_account_name: aimssingreseu24900443489
+    container_name: amulet
+
+code:
+  local_dir: ../
+
+
+jobs:
+  - name: debugsession #_westeuro
+    sku: 40000000000G8
+    process_count_per_node: 1
+    sla_tier: Premium # Standard
+    command:
+      - sleep infinity
+
+  - name: tlgpose4node
+    sku: 4xG8-H100-IB
+    process_count_per_node: 1
+    mpi: True
+    sla_tier: Premium
+    command:
+      - bash script/run_train_phi25v3.sh 32 yarn
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+
+
+  - name: phi25v3pose #_westeuro
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Premium # Standard
+    command:
+      - bash script/run_train_phi25v3.sh 32 yarn
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+
+  - name: pose_eval_pg19
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Standard
+    command:
+      - bash script/run_eval_ppl.sh
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+
+  - name: pose_eval_passkey
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Standard
+    command:
+      - bash script/run_eval_passkey.sh
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }

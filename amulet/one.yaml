@@ -1,0 +1,112 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+description: Experiment "nikos pose"
+
+# amlt run commands are documented here for historical purposes
+# amlt run pose.yaml :pose -w aims-sing-res-eu-WS@Singularity_VCs
+# amlt run phi3.yaml :phi3_27b_pose
+# amlt run phi3.yaml :phi3_38b_pose
+# amlt run phi25v3.yaml :phi25v3pose
+# amlt run tlg.yaml :tlgpose
+
+target:
+  name: aims-sing-east-us2
+  workspace_name: aims-sing-res-eu-WS
+  service: sing
+
+#target:
+#  name: GenAI-Shared-WestEuro
+#  workspace_name: Singularity-GenAI-WS
+#  service: sing
+
+#target:
+#  name: aims-sing-a100-wus3 # aims-sing-res-wus3-02
+#  workspace_name: aims-sing-res-eu-WS
+#  service: sing
+
+
+# Other targets are commented out for historical context
+# - GenAI-Shared-WestEuro, Singularity-GenAI-WS, sing
+# - aims-sing-a100-wus3, aims-sing-res-wus3-02, sing
+
+environment:
+  image: nvidia24.01-ds0.13.3-fa2.5.3-te1.4.0.beta-mb0.5.1-gg:20240222
+  username: structureddl
+  registry: structureddl.azurecr.io
+  # The setup commands are merged, ensuring all necessary commands are included.
+  setup:
+    - set -e -o xtrace
+    - export PATH=/home/aiscuser/.local/bin:/home/$$USER/.local/bin:$$PATH
+    - apt update && apt install -y tmux strace
+    - pip install typing-inspect==0.8.0 torch==2.1.1 datasets fire transformers xformers accelerate sentencepiece tensorboard jsonlines numpy openai tqdm tiktoken pytest azureml-sdk mlflow azureml-mlflow einops
+
+storage:
+  data_storage:
+    storage_account_name: aimsllmeus2
+    container_name: data
+    mount_dir: /mnt/llmdata
+    is_output: true
+
+  output:
+    storage_account_name: aimssingreseu24900443489
+    container_name: amulet
+
+code:
+  local_dir: ../
+
+# Jobs section includes all distinct jobs from the provided YAML files.
+jobs:
+  - name: skus
+    sku: 40000000000G8
+    process_count_per_node: 1
+    sla_tier: Premium
+    command:
+      - sleep infinity
+
+  - name: debugsession
+    sku: 1G8
+    process_count_per_node: 1
+    sla_tier: Premium
+    command:
+      - bash script/run_debug.sh
+
+  - name: phi3mini_pose
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Premium
+    command:
+      - bash script/run_train_phi3mini.sh 48 yarn
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+
+  - name: phi3small_pose
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Premium
+    command:
+      - bash script/run_train_phi3small.sh 48 yarn
+
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+    
+  - name: phi3medium_pose
+    sku: 1xG8
+    process_count_per_node: 1
+    sla_tier: Premium
+    command:
+      - bash script/run_train_phi3medium.sh 48 yarn
+    
+    submit_args:
+      env:
+        {
+          "SINGULARITY_MPI_ENV": "-mca pml ucx -mca coll ^hcoll --bind-to numa -x RX_QUEUE_LEN=8192 -x IB_RX_QUEUE_LEN=8192 -x UCX_TLS=tcp -x HCOLL_ENABLE_MCAST_ALL=0 -x coll_hcoll_enable=0 -x UCX_NET_DEVICES=eth0 -x NCCL_IB_TIMEOUT=16 -x NCCL_IB_SL=0 -x NCCL_IB_TC=41 -x NCCL_IB_GID_INDEX=3 -x NCCL_IB_QPS_PER_CONNECTION=4 -x NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_11,mlx5_12,mlx5_14,mlx5_15,mlx5_16,mlx5_17 -x NCCL_SOCKET_IFNAME=eth0 -x NCCL_DEBUG=INFO",
+        }
+  

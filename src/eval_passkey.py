@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from my_modeling_llama import LlamaForCausalLM
 from my_configuration_llama import LlamaConfig
+from my_configuration_tlg import TLGv4Config
 from train_pose import smart_tokenizer_and_embedding_resize, DEFAULT_BOS_TOKEN, DEFAULT_EOS_TOKEN, DEFAULT_PAD_TOKEN, DEFAULT_UNK_TOKEN
 
 gpu_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -90,7 +91,8 @@ def main():
     # model_name_or_path = "/home/v-daweizhu/teamdrive/skipos/results/2k-32k-v5/checkpoint-500"
     model_name_or_path = args.path_to_ckp
 
-    config = LlamaConfig.from_pretrained(model_name_or_path)
+    #config = LlamaConfig.from_pretrained(model_name_or_path)
+    config = TLGv4Config.from_pretrained(model_name_or_path)
     scaled_max_position_embeddings=int(args.model_max_position_embeddings * args.rope_scaling_factor)
 
     if config.rope_scaling is None:
